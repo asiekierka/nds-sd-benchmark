@@ -16,6 +16,7 @@
 const char *nds_filename;
 uint8_t *io_buffer;
 int io_buffer_size;
+int io_read_offset = 0;
 
 static inline uint32_t my_rand(void)
 {
@@ -54,7 +55,7 @@ static void benchmark_read(void) {
         uint32_t ticks_start = get_ticks();
         uint32_t reads = 0;
         while (reads < reads_count) {
-            fseek(file, (my_rand() & (~0x1FF)) & 0x7FFFFF, SEEK_SET);
+            fseek(file, ((my_rand() & (~0x1FF)) & 0x7FFFFF) + io_read_offset, SEEK_SET);
             fread(io_buffer, curr_size, 1, file);
             reads++;
         }
@@ -102,7 +103,7 @@ static void benchmark_write(void) {
         uint32_t ticks_start = get_ticks();
         uint32_t reads = 0;
         while (reads < reads_count) {
-            fseek(file, file_offset + ((my_rand() & (~0x1FF)) & 0x1FFFFF), SEEK_SET);
+            fseek(file, file_offset + ((my_rand() & (~0x1FF)) & 0x1FFFFF) + io_read_offset, SEEK_SET);
             fwrite(io_buffer, curr_size, 1, file);
             reads++;
         }
@@ -209,12 +210,18 @@ int main(int argc, char **argv) {
             case 0: printf("\x1b[2J"); benchmark_read(); press_start_to_continue(); break;
             case 1: printf("\x1b[2J"); benchmark_write(); press_start_to_continue(); break;
             case 2: REG_EXMEMCNT ^= (1 << 15); break;
+            case 3:
+                if (io_read_offset == 0) io_read_offset = 1;
+                else if (io_read_offset >= 256) io_read_offset = 0;
+                else io_read_offset <<= 1;
+                break;
         }
 
         snprintf(options[0], 33, "Benchmark reads");
         snprintf(options[1], 33, "Benchmark writes");
         snprintf(options[2], 33, "RAM priority: %s", (REG_EXMEMCNT & (1 << 15)) ? "ARM7" : "ARM9");
-        options_count = 3;
+        snprintf(options[3], 33, "Byte offset: %d", io_read_offset);
+        options_count = 4;
     } while (run_menu(options_count, &selection));
 
 exit:
