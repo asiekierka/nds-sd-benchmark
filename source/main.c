@@ -61,7 +61,7 @@ static void benchmark_read(void) {
         }
         double read_kilobytes = (curr_size / 1024.0) * reads_count;
         uint32_t ticks_end = get_ticks();
-	uint32_t ticks_diff = ticks_end - ticks_start;
+	    uint32_t ticks_diff = ticks_end - ticks_start;
         double seconds_time = (ticks_diff) / (double)(BUS_CLOCK >> 8);
         double kilobytes_per_second = read_kilobytes / seconds_time;
         if (kilobytes_per_second >= 1024.0) {
@@ -71,6 +71,7 @@ static void benchmark_read(void) {
         }
 
         printf("\x1b[32D\x1b[%dC\x1b[42m%s\x1b[39m\n", 32 - 2 - strlen(msg_buffer), msg_buffer);
+        swiDelay(5000000);
     }
 
     fclose(file);
@@ -87,15 +88,15 @@ static void benchmark_write(void) {
     printf("        \x1b[46mTesting writes...\x1b[39m\n");
 
     char msg_buffer[33];
-    int reads_count = 2;
-    for (int curr_size = io_buffer_size; curr_size >= 512; curr_size >>= 1) {
+    int reads_count = 1024;
+    for (int curr_size = 512; curr_size <= io_buffer_size; curr_size <<= 1) {
         if (curr_size > 1*1024*1024) {
             continue;
         } else if (curr_size >= 1024*1024) {
             printf("  %3d MiB", curr_size >> 20);
         } else if (curr_size >= 1024) {
             printf("  %3d KiB", curr_size >> 10);
-            reads_count = (reads_count * 3) / 2;
+            reads_count >>= 1;
         } else {
             printf("  0.5 KiB");
         }
@@ -119,6 +120,7 @@ static void benchmark_write(void) {
         }
 
         printf("\x1b[32D\x1b[%dC\x1b[42m%s\x1b[39m\n", 32 - 2 - strlen(msg_buffer), msg_buffer);
+        swiDelay(5000000);
     }
 
     fclose(file);
