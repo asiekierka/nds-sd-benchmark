@@ -17,7 +17,7 @@ const char *nds_filename;
 uint8_t *io_buffer;
 int io_buffer_size;
 int io_read_offset = 0;
-bool lookup_cache_enabled = false;
+bool lookup_cache_enabled = true;
 
 static inline uint32_t my_rand(void)
 {
@@ -32,7 +32,7 @@ static inline uint32_t get_ticks(void) {
     return TIMER0_DATA | (TIMER1_DATA << 16);
 }
 
-static void benchmark_read(void) {
+static void benchmark_read(bool sequential) {
     FILE *file = fopen(nds_filename, "rb");
     if (file == NULL) {
         printf("\x1b[41mCould not open '%s'!\n", nds_filename);
@@ -59,11 +59,22 @@ static void benchmark_read(void) {
 
         uint32_t ticks_start = get_ticks();
         uint32_t reads = 0;
-        while (reads < reads_count) {
-            fseek(file, ((my_rand() & (~0x1FF)) & 0x7FFFFF) + io_read_offset, SEEK_SET);
-            fread(io_buffer, curr_size, 1, file);
-            reads++;
-        }
+	if (sequential) {
+            int pos = 0;
+	    while (reads < reads_count) {
+		if (pos == 0)
+	                fseek(file, io_read_offset, SEEK_SET);
+                fread(io_buffer, curr_size, 1, file);
+		pos = (pos + curr_size) & 0x7FFFFF;
+                reads++;
+            }
+	} else {
+	    while (reads < reads_count) {
+                fseek(file, ((my_rand() & (~0x1FF)) & 0x7FFFFF) + io_read_offset, SEEK_SET);
+                fread(io_buffer, curr_size, 1, file);
+                reads++;
+            }
+	}
         double read_kilobytes = (curr_size / 1024.0) * reads_count;
         uint32_t ticks_end = get_ticks();
 	    uint32_t ticks_diff = ticks_end - ticks_start;
@@ -82,7 +93,7 @@ static void benchmark_read(void) {
     fclose(file);
 }
 
-static void benchmark_write(void) {
+static void benchmark_write(bool sequential) {
     FILE *file = fopen(nds_filename, "r+b");
     int file_offset = 8*1024*1024;
     if (file == NULL) {
@@ -111,10 +122,21 @@ static void benchmark_write(void) {
 
         uint32_t ticks_start = get_ticks();
         uint32_t reads = 0;
-        while (reads < reads_count) {
-            fseek(file, file_offset + ((my_rand() & (~0x1FF)) & 0x1FFFFF) + io_read_offset, SEEK_SET);
-            fwrite(io_buffer, curr_size, 1, file);
-            reads++;
+        if (sequential) {
+            int pos = 0;
+	    while (reads < reads_count) {
+		if (pos == 0)
+	                fseek(file, io_read_offset, SEEK_SET);
+                fwrite(io_buffer, curr_size, 1, file);
+		pos = (pos + curr_size) & 0x1FFFFF;
+                reads++;
+            }
+        } else {
+            while (reads < reads_count) {
+                fseek(file, file_offset + ((my_rand() & (~0x1FF)) & 0x1FFFFF) + io_read_offset, SEEK_SET);
+                fwrite(io_buffer, curr_size, 1, file);
+                reads++;
+            }
         }
         double read_kilobytes = (curr_size / 1024.0) * reads_count;
         uint32_t ticks_end = get_ticks();
@@ -217,26 +239,30 @@ int main(int argc, char **argv) {
 
     do {
         switch (selection) {
-            case 0: printf("\x1b[2J"); benchmark_read(); press_start_to_continue(); break;
-            case 1: printf("\x1b[2J"); benchmark_write(); press_start_to_continue(); break;
-            case 2: REG_EXMEMCNT ^= (1 << 15); break;
-            case 3:
+            case 0: printf("\x1b[2J"); benchmark_read(false); press_start_to_continue(); break;
+            case 1: printf("\x1b[2J"); benchmark_write(false); press_start_to_continue(); break;
+            case 2: printf("\x1b[2J"); benchmark_read(true); press_start_to_continue(); break;
+            case 3: printf("\x1b[2J"); benchmark_write(true); press_start_to_continue(); break;
+            case 4: REG_EXMEMCNT ^= (1 << 15); break;
+            case 5:
                 if (io_read_offset == 0) io_read_offset = 1;
                 else if (io_read_offset >= 256) io_read_offset = 0;
                 else io_read_offset <<= 1;
                 break;
-            case 4: lookup_cache_enabled = !lookup_cache_enabled; break;
+            case 6: lookup_cache_enabled = !lookup_cache_enabled; break;
         }
 
-        snprintf(options[0], 33, "Benchmark reads");
-        snprintf(options[1], 33, "Benchmark writes");
-        snprintf(options[2], 33, "RAM priority: %s", (REG_EXMEMCNT & (1 << 15)) ? "ARM7" : "ARM9");
-        snprintf(options[3], 33, "Byte offset: %d", io_read_offset);
+        snprintf(options[0], 33, "Bench. random reads");
+        snprintf(options[1], 33, "Bench. random writes");
+        snprintf(options[2], 33, "Bench. sequential reads");
+        snprintf(options[3], 33, "Bench. sequential writes");
+        snprintf(options[4], 33, "RAM priority: %s", (REG_EXMEMCNT & (1 << 15)) ? "ARM7" : "ARM9");
+        snprintf(options[5], 33, "Byte offset: %d", io_read_offset);
 #ifdef BLOCKSDS
-        snprintf(options[4], 33, "Seek lookup cache: %s", lookup_cache_enabled ? "Yes" : "No");
-        options_count = 5;
+        snprintf(options[6], 33, "Seek lookup cache: %s", lookup_cache_enabled ? "Yes" : "No");
+        options_count = 7;
 #else
-        options_count = 4;
+        options_count = 6;
 #endif
     } while (run_menu(options_count, &selection));
 
