@@ -17,6 +17,7 @@ const char *nds_filename;
 uint8_t *io_buffer;
 int io_buffer_size;
 int io_read_offset = 0;
+bool lookup_cache_enabled = false;
 
 static inline uint32_t my_rand(void)
 {
@@ -37,7 +38,11 @@ static void benchmark_read(void) {
         printf("\x1b[41mCould not open '%s'!\n", nds_filename);
         return;
     }
-
+//    printf("%d\n",
+#ifdef BLOCKSDS
+    if (lookup_cache_enabled)
+	fatInitLookupCacheFile(file, 65536);
+#endif
     printf("        \x1b[46mTesting reads...\x1b[39m\n");
 
     char msg_buffer[33];
@@ -84,7 +89,10 @@ static void benchmark_write(void) {
         printf("\x1b[41mCould not open '%s'!\n", nds_filename);
         return;
     }
-
+#ifdef BLOCKSDS
+    if (lookup_cache_enabled)
+        fatInitLookupCacheFile(file, 65536);
+#endif
     printf("        \x1b[46mTesting writes...\x1b[39m\n");
 
     char msg_buffer[33];
@@ -217,13 +225,19 @@ int main(int argc, char **argv) {
                 else if (io_read_offset >= 256) io_read_offset = 0;
                 else io_read_offset <<= 1;
                 break;
+            case 4: lookup_cache_enabled = !lookup_cache_enabled; break;
         }
 
         snprintf(options[0], 33, "Benchmark reads");
         snprintf(options[1], 33, "Benchmark writes");
         snprintf(options[2], 33, "RAM priority: %s", (REG_EXMEMCNT & (1 << 15)) ? "ARM7" : "ARM9");
         snprintf(options[3], 33, "Byte offset: %d", io_read_offset);
+#ifdef BLOCKSDS
+        snprintf(options[4], 33, "Seek lookup cache: %s", lookup_cache_enabled ? "Yes" : "No");
+        options_count = 5;
+#else
         options_count = 4;
+#endif
     } while (run_menu(options_count, &selection));
 
 exit:
