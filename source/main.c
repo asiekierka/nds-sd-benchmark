@@ -4,11 +4,7 @@
 
 #include <stdio.h>
 
-#ifdef BLOCKSDS
-#include <fatfs.h>
-#else
 #include <fat.h>
-#endif
 #include <nds.h>
 
 #include <nds/arm9/dldi.h>
