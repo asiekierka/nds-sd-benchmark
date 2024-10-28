@@ -1,3 +1,2 @@
 #!/bin/sh
-mkdir -p nitrofs
-dd if=/dev/urandom of=nitrofs/pad.bin bs=1M count=16
+dd if=/dev/urandom of=benchmark_pad.bin bs=1M count=8
