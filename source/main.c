@@ -6,22 +6,17 @@
 
 #include <fat.h>
 #include <nds.h>
+#include <unistd.h>
 
 #include <nds/arm9/dldi.h>
 
-const char *nds_filename;
+const char *pad_filename = "/benchmark_pad.bin";
+#define PAD_FILE_SIZE (8*1024*1024)
 uint8_t *io_buffer;
 int io_buffer_size;
 int io_read_offset = 0;
 bool lookup_cache_enabled = true;
 bool fat_initialized = false;
-
-static void fat_init(void) {
-    if (!fat_initialized) {
-        fatInitDefault();
-        fat_initialized = true;
-    }
-}
 
 static inline uint32_t my_rand(void) {
     static uint32_t seed = 0;
@@ -33,11 +28,54 @@ static inline uint32_t get_ticks(void) {
     return TIMER0_DATA | (TIMER1_DATA << 16);
 }
 
+static void create_pad_file(void) {
+    FILE *file;
+    uint32_t buffer[256];
+
+    file = fopen(pad_filename, "rb");
+    if (file != NULL) {
+        fclose(file);
+        return;
+    }
+
+    file = fopen(pad_filename, "wb");
+    if (file == NULL) {
+        printf("\x1b[41mCould not create pad file!\n");
+        return;
+    }
+    printf("Creating pad file... ");
+    for (int i = 0; i < PAD_FILE_SIZE; i += sizeof(buffer)) {
+        for (int k = 0; k < sizeof(buffer) / 4; k++) {
+            buffer[k] = my_rand();
+        }
+        if (fwrite(buffer, sizeof(buffer), 1, file) <= 0) {
+            fclose(file);
+            unlink(pad_filename);
+            printf("\x1b[41mError!\n");
+            return;
+        }
+    }
+    printf("OK\n");
+    fclose(file);
+}
+
+static void fat_init(void) {
+    if (!fat_initialized) {
+        if (!fatInitDefault()) {
+            printf("\x1b[41mFAT init failed!\n");
+            // Set fat_initialized anyway; the file open operations
+            // will fail instead.
+        }
+        create_pad_file();
+        fat_initialized = true;
+    }
+}
+
 static void benchmark_read(bool sequential) {
     fat_init();
-    FILE *file = fopen(nds_filename, "rb");
+    FILE *file = fopen(pad_filename, "rb");
     if (file == NULL) {
-        printf("\x1b[41mCould not open '%s'!\n", nds_filename);
+        printf("\x1b[41mCould not open '%s'!\n", pad_filename);
         return;
     }
 //    printf("%d\n",
@@ -65,15 +103,17 @@ static void benchmark_read(bool sequential) {
             int pos = 0;
 	    while (reads < reads_count) {
 		if (pos == 0)
-	                fseek(file, io_read_offset, SEEK_SET);
-                fread(io_buffer, curr_size, 1, file);
-		pos = (pos + curr_size) & 0x7FFFFF;
+	            fseek(file, io_read_offset, SEEK_SET);
+                if (fread(io_buffer, curr_size, 1, file) <= 0)
+                    break;
+		pos = (pos + curr_size) & 0x3FFFFF;
                 reads++;
             }
 	} else {
 	    while (reads < reads_count) {
-                fseek(file, ((my_rand() & (~0x1FF)) & 0x7FFFFF) + io_read_offset, SEEK_SET);
-                fread(io_buffer, curr_size, 1, file);
+                fseek(file, ((my_rand() & (~0x1FF)) & 0x3FFFFF) + io_read_offset, SEEK_SET);
+                if (fread(io_buffer, curr_size, 1, file) <= 0)
+                    break;
                 reads++;
             }
 	}
@@ -82,7 +122,9 @@ static void benchmark_read(bool sequential) {
 	    uint32_t ticks_diff = ticks_end - ticks_start;
         double seconds_time = (ticks_diff) / (double)(BUS_CLOCK >> 8);
         double kilobytes_per_second = read_kilobytes / seconds_time;
-        if (kilobytes_per_second >= 1024.0) {
+        if (reads < reads_count) {
+            sprintf(msg_buffer, "\x1b[41mERROR");
+        } else if (kilobytes_per_second >= 1024.0) {
             sprintf(msg_buffer, "%.3f MB/s", kilobytes_per_second / 1024.0);
         } else {
             sprintf(msg_buffer, "%.3f KB/s", kilobytes_per_second);
@@ -97,10 +139,9 @@ static void benchmark_read(bool sequential) {
 
 static void benchmark_write(bool sequential) {
     fat_init();
-    FILE *file = fopen(nds_filename, "r+b");
-    int file_offset = 8*1024*1024;
+    FILE *file = fopen(pad_filename, "r+b");
     if (file == NULL) {
-        printf("\x1b[41mCould not open '%s'!\n", nds_filename);
+        printf("\x1b[41mCould not open '%s'!\n", pad_filename);
         return;
     }
 #ifdef BLOCKSDS
@@ -129,15 +170,17 @@ static void benchmark_write(bool sequential) {
             int pos = 0;
 	    while (reads < reads_count) {
 		if (pos == 0)
-	                fseek(file, io_read_offset, SEEK_SET);
-                fwrite(io_buffer, curr_size, 1, file);
+	            fseek(file, io_read_offset, SEEK_SET);
+                if (fwrite(io_buffer, curr_size, 1, file) <= 0)
+                    break;
 		pos = (pos + curr_size) & 0x1FFFFF;
                 reads++;
             }
         } else {
             while (reads < reads_count) {
-                fseek(file, file_offset + ((my_rand() & (~0x1FF)) & 0x1FFFFF) + io_read_offset, SEEK_SET);
-                fwrite(io_buffer, curr_size, 1, file);
+                fseek(file, ((my_rand() & (~0x1FF)) & 0x1FFFFF) + io_read_offset, SEEK_SET);
+                if (fwrite(io_buffer, curr_size, 1, file) <= 0)
+                    break;
                 reads++;
             }
         }
@@ -146,7 +189,9 @@ static void benchmark_write(bool sequential) {
 	    uint32_t ticks_diff = ticks_end - ticks_start;
         double seconds_time = (ticks_diff) / (double)(BUS_CLOCK >> 8);
         double kilobytes_per_second = read_kilobytes / seconds_time;
-        if (kilobytes_per_second >= 1024.0) {
+        if (reads < reads_count) {
+            sprintf(msg_buffer, "\x1b[41mERROR");
+        } else if (kilobytes_per_second >= 1024.0) {
             sprintf(msg_buffer, "%.3f MB/s", kilobytes_per_second / 1024.0);
         } else {
             sprintf(msg_buffer, "%.3f KB/s", kilobytes_per_second);
@@ -211,8 +256,8 @@ int main(int argc, char **argv) {
     printf("\x1b[2J"); // Clear console
 
     //      01234567890123456789012345678901
-    printf("  \x1b[43m*\x1b[39m SD file system benchmark \x1b[43m*\x1b[39m\n");
-    printf("\x1b[37mDLDI: %s\x1b[39m\n\n", io_dldi_data->friendlyName);
+    printf(" \x1b[43m*\x1b[39m DLDI driver benchmark v0.2 \x1b[43m*\x1b[39m\n");
+    printf("\x1b[37m%s\x1b[39m\n\n", io_dldi_data->friendlyName);
 
     // set window
     consoleSetWindow(NULL, 0, 3, 32, 25);
@@ -228,8 +273,6 @@ int main(int argc, char **argv) {
         printf("\x1b[41mOut of memory!\n");
         goto exit;
     }
-
-    nds_filename = argv[0];
 
     TIMER0_DATA = 0;
     TIMER1_DATA = 0;
