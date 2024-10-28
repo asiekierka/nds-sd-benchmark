@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MIT
 //
-// SPDX-FileContributor: Adrian "asie" Siekierka, 2023
+// SPDX-FileContributor: Adrian "asie" Siekierka, 2023, 2024
 
 #include <stdio.h>
 
@@ -14,13 +14,18 @@ uint8_t *io_buffer;
 int io_buffer_size;
 int io_read_offset = 0;
 bool lookup_cache_enabled = true;
+bool fat_initialized = false;
 
-static inline uint32_t my_rand(void)
-{
+static void fat_init(void) {
+    if (!fat_initialized) {
+        fatInitDefault();
+        fat_initialized = true;
+    }
+}
+
+static inline uint32_t my_rand(void) {
     static uint32_t seed = 0;
-
     seed = seed * 0xFDB97531 + 0x2468ACE;
-
     return seed;
 }
 
@@ -29,6 +34,7 @@ static inline uint32_t get_ticks(void) {
 }
 
 static void benchmark_read(bool sequential) {
+    fat_init();
     FILE *file = fopen(nds_filename, "rb");
     if (file == NULL) {
         printf("\x1b[41mCould not open '%s'!\n", nds_filename);
@@ -90,6 +96,7 @@ static void benchmark_read(bool sequential) {
 }
 
 static void benchmark_write(bool sequential) {
+    fat_init();
     FILE *file = fopen(nds_filename, "r+b");
     int file_offset = 8*1024*1024;
     if (file == NULL) {
@@ -222,13 +229,16 @@ int main(int argc, char **argv) {
         goto exit;
     }
 
-    fatInitDefault();
     nds_filename = argv[0];
 
     TIMER0_DATA = 0;
     TIMER1_DATA = 0;
     TIMER0_CR = TIMER_ENABLE | TIMER_DIV_256;
     TIMER1_CR = TIMER_ENABLE | TIMER_CASCADE;
+
+#ifdef BLOCKSDS
+    dldiSetMode(DLDI_MODE_ARM9);
+#endif
 
     int options_count;
     int selection = -1;
@@ -245,7 +255,10 @@ int main(int argc, char **argv) {
                 else if (io_read_offset >= 256) io_read_offset = 0;
                 else io_read_offset <<= 1;
                 break;
+#ifdef BLOCKSDS
             case 6: lookup_cache_enabled = !lookup_cache_enabled; break;
+            case 7: if (!fat_initialized) dldiSetMode(dldiGetMode() == DLDI_MODE_ARM7 ? DLDI_MODE_ARM9 : DLDI_MODE_ARM7); break;
+#endif
         }
 
         snprintf(options[0], 33, "Bench. random reads");
@@ -256,7 +269,8 @@ int main(int argc, char **argv) {
         snprintf(options[5], 33, "Byte offset: %d", io_read_offset);
 #ifdef BLOCKSDS
         snprintf(options[6], 33, "Seek lookup cache: %s", lookup_cache_enabled ? "Yes" : "No");
-        options_count = 7;
+        snprintf(options[7], 33, "DLDI CPU: %s", dldiGetMode() == DLDI_MODE_ARM7 ? "ARM7" : "ARM9");
+        options_count = 8;
 #else
         options_count = 6;
 #endif
