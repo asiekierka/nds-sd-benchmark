@@ -3,12 +3,13 @@
 // SPDX-FileContributor: Adrian "asie" Siekierka, 2023, 2024
 
 #include <stdio.h>
+
 #include <fat.h>
 #include <nds.h>
 #include <unistd.h>
+
 #include <nds/arm9/dldi.h>
 
-#include "common.h"
 #include "ui.h"
 
 const char *pad_filename = "/benchmark_pad.bin";
