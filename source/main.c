@@ -44,19 +44,23 @@ static void create_pad_file(void) {
         printf("\x1b[41mCould not create pad file!\n");
         return;
     }
-    printf("Creating pad file... ");
+    printf("Creating pad file...");
     for (int i = 0; i < PAD_FILE_SIZE; i += sizeof(buffer)) {
+        // Report progress every 1 MB
+        if (i && !(i & 0xFFFFF)) {
+            printf(".");
+        }
         for (int k = 0; k < sizeof(buffer) / 4; k++) {
             buffer[k] = my_rand();
         }
         if (fwrite(buffer, sizeof(buffer), 1, file) <= 0) {
             fclose(file);
             unlink(pad_filename);
-            printf("\x1b[41mError!\n");
+            printf("\x1b[41m Error!\n");
             return;
         }
     }
-    printf("OK\n");
+    printf(" OK\n");
     fclose(file);
 }
 
