@@ -6,6 +6,8 @@
 #include <nds.h>
 #include <nds/arm9/dldi.h>
 #include <fat.h>
+
+#include "common.h"
 #include "ui.h"
 
 static PrintConsole bottomConsole, topConsole;
