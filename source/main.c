@@ -10,6 +10,8 @@
 
 #include <nds/arm9/dldi.h>
 
+#include "ui.h"
+
 const char *pad_filename = "/benchmark_pad.bin";
 #define PAD_FILE_SIZE (8*1024*1024)
 uint8_t *io_buffer;
@@ -61,6 +63,7 @@ static void create_pad_file(void) {
 
 static void fat_init(void) {
     if (!fat_initialized) {
+        ui_select_top();
         if (!fatInitDefault()) {
             printf("\x1b[41mFAT init failed!\n");
             // Set fat_initialized anyway; the file open operations
@@ -68,6 +71,7 @@ static void fat_init(void) {
         }
         create_pad_file();
         fat_initialized = true;
+        ui_select_bottom();
     }
 }
 
@@ -75,6 +79,7 @@ static void benchmark_read(bool sequential) {
     fat_init();
     FILE *file = fopen(pad_filename, "rb");
     if (file == NULL) {
+        ui_select_top();
         printf("\x1b[41mCould not open '%s'!\n", pad_filename);
         return;
     }
@@ -141,6 +146,7 @@ static void benchmark_write(bool sequential) {
     fat_init();
     FILE *file = fopen(pad_filename, "r+b");
     if (file == NULL) {
+        ui_select_top();
         printf("\x1b[41mCould not open '%s'!\n", pad_filename);
         return;
     }
@@ -216,6 +222,7 @@ static bool run_menu(int options_count, int *selection) {
     int menu_left = ((30 - max_option_width) >> 1) - 1;
 
     while (1) {
+        ui_select_bottom();
         if (last_selection != *selection) {
             printf("\x1b[2J"); // Clear console
             for (int i = 0; i < options_count; i++) {
@@ -236,6 +243,7 @@ static bool run_menu(int options_count, int *selection) {
 }
 
 static void press_start_to_continue(void) {
+    ui_select_bottom();
     printf("\x1b[39m\n");
     printf("Press START to continue\n");
 
@@ -251,18 +259,12 @@ static void press_start_to_continue(void) {
 }
 
 int main(int argc, char **argv) {
-    consoleDemoInit();
-
-    printf("\x1b[2J"); // Clear console
-
-    //      01234567890123456789012345678901
-    printf(" \x1b[43m*\x1b[39m DLDI driver benchmark v0.2 \x1b[43m*\x1b[39m\n");
-    printf("\x1b[37m%s\x1b[39m\n\n", io_dldi_data->friendlyName);
-
-    // set window
-    consoleSetWindow(NULL, 0, 3, 32, 25);
+    defaultExceptionHandler();
+    powerOn(POWER_ALL_2D);
+    ui_init();
 
     if (argc <= 0 || argv[0][0] == 0) {
+        ui_select_top();
         printf("\x1b[41mCould not find argv!\n");
         goto exit;
     }
@@ -270,6 +272,7 @@ int main(int argc, char **argv) {
     io_buffer_size = 2*1024*1024;
     io_buffer = malloc(io_buffer_size);
     if (io_buffer == NULL) {
+        ui_select_top();
         printf("\x1b[41mOut of memory!\n");
         goto exit;
     }
@@ -320,6 +323,7 @@ int main(int argc, char **argv) {
     } while (run_menu(options_count, &selection));
 
 exit:
+    ui_select_bottom();
     printf("\x1b[39m\n");
     printf("Press START to exit to loader\n");
 

@@ -11,7 +11,7 @@ ARM_NONE_EABI_PATH	?= $(WONDERFUL_TOOLCHAIN)/toolchain/gcc-arm-none-eabi/bin/
 # User config
 # ===========
 
-NAME		:= filesystem_benchmark_blocks
+NAME		:= dldi_benchmark_blocksds
 
 GAME_TITLE	:= DLDI driver benchmark
 GAME_SUBTITLE	:= Built with BlocksDS
