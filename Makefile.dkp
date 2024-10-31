@@ -9,7 +9,7 @@ endif
 # These set the information text in the nds file
 GAME_TITLE     := DLDI driver benchmark
 GAME_SUBTITLE1 := Built with devkitARM
-GAME_SUBTITLE2 := Version 0.2
+GAME_SUBTITLE2 := Version 0.3
 
 include $(DEVKITARM)/ds_rules
 

@@ -15,7 +15,7 @@ NAME		:= dldi_benchmark_blocksds
 
 GAME_TITLE	:= DLDI driver benchmark
 GAME_SUBTITLE	:= Built with BlocksDS
-GAME_AUTHOR	:= Version 0.2
+GAME_AUTHOR	:= Version 0.3
 GAME_ICON	:= icon.bmp
 
 # DLDI and internal SD slot of DSi
