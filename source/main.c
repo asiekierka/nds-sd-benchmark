@@ -30,6 +30,13 @@ static inline uint32_t get_ticks(void) {
     return TIMER0_DATA | (TIMER1_DATA << 16);
 }
 
+static void randomize_buffer(void *buffer, uint32_t size) {
+    uint32_t *buffer32 = (uint32_t*) buffer;
+    size >>= 2;
+    for (uint32_t k = 0; k < size; k++)
+        buffer32[k] = my_rand();
+}
+
 static void create_pad_file(void) {
     FILE *file;
     uint32_t buffer[256];
@@ -51,9 +58,7 @@ static void create_pad_file(void) {
         if (i && !(i & 0xFFFFF)) {
             printf(".");
         }
-        for (int k = 0; k < sizeof(buffer) / 4; k++) {
-            buffer[k] = my_rand();
-        }
+        randomize_buffer(buffer, sizeof(buffer));
         if (fwrite(buffer, sizeof(buffer), 1, file) <= 0) {
             fclose(file);
             unlink(pad_filename);
@@ -79,6 +84,20 @@ static void fat_init(void) {
     }
 }
 
+static void print_kilobytes_per_second(double read_kilobytes, uint32_t ticks_diff, bool is_error) {
+    char msg_buffer[33];
+    double seconds_time = ticks_diff / (double)(BUS_CLOCK >> 8);
+    double kilobytes_per_second = read_kilobytes / seconds_time;
+    if (is_error) {
+        sprintf(msg_buffer, "\x1b[41mERROR");
+    } else if (kilobytes_per_second >= 1024.0) {
+        sprintf(msg_buffer, "%.3f MB/s", kilobytes_per_second / 1024.0);
+    } else {
+        sprintf(msg_buffer, "%.3f KB/s", kilobytes_per_second);
+    }
+    printf("\x1b[32D\x1b[%dC\x1b[42m%s\x1b[39m\n", 32 - 2 - strlen(msg_buffer), msg_buffer);
+}
+
 static void benchmark_read(bool sequential) {
     fat_init();
     FILE *file = fopen(pad_filename, "rb");
@@ -94,7 +113,6 @@ static void benchmark_read(bool sequential) {
 #endif
     printf("        \x1b[46mTesting reads...\x1b[39m\n");
 
-    char msg_buffer[33];
     int reads_count = 4;
     for (int curr_size = io_buffer_size; curr_size >= 512; curr_size >>= 1) {
         if (curr_size >= 1024*1024) {
@@ -126,20 +144,10 @@ static void benchmark_read(bool sequential) {
                 reads++;
             }
 	}
-        double read_kilobytes = (curr_size / 1024.0) * reads_count;
         uint32_t ticks_end = get_ticks();
-	    uint32_t ticks_diff = ticks_end - ticks_start;
-        double seconds_time = (ticks_diff) / (double)(BUS_CLOCK >> 8);
-        double kilobytes_per_second = read_kilobytes / seconds_time;
-        if (reads < reads_count) {
-            sprintf(msg_buffer, "\x1b[41mERROR");
-        } else if (kilobytes_per_second >= 1024.0) {
-            sprintf(msg_buffer, "%.3f MB/s", kilobytes_per_second / 1024.0);
-        } else {
-            sprintf(msg_buffer, "%.3f KB/s", kilobytes_per_second);
-        }
-
-        printf("\x1b[32D\x1b[%dC\x1b[42m%s\x1b[39m\n", 32 - 2 - strlen(msg_buffer), msg_buffer);
+        double read_kilobytes = (curr_size / 1024.0) * reads_count;
+        uint32_t ticks_diff = ticks_end - ticks_start;
+        print_kilobytes_per_second(read_kilobytes, ticks_diff, reads < reads_count);
         swiDelay(5000000);
     }
 
@@ -160,7 +168,6 @@ static void benchmark_write(bool sequential) {
 #endif
     printf("        \x1b[46mTesting writes...\x1b[39m\n");
 
-    char msg_buffer[33];
     int reads_count = 1024;
     for (int curr_size = 512; curr_size <= io_buffer_size; curr_size <<= 1) {
         if (curr_size > 1*1024*1024) {
@@ -196,19 +203,57 @@ static void benchmark_write(bool sequential) {
         }
         double read_kilobytes = (curr_size / 1024.0) * reads_count;
         uint32_t ticks_end = get_ticks();
-	    uint32_t ticks_diff = ticks_end - ticks_start;
-        double seconds_time = (ticks_diff) / (double)(BUS_CLOCK >> 8);
-        double kilobytes_per_second = read_kilobytes / seconds_time;
-        if (reads < reads_count) {
-            sprintf(msg_buffer, "\x1b[41mERROR");
-        } else if (kilobytes_per_second >= 1024.0) {
-            sprintf(msg_buffer, "%.3f MB/s", kilobytes_per_second / 1024.0);
+        uint32_t ticks_diff = ticks_end - ticks_start;
+        print_kilobytes_per_second(read_kilobytes, ticks_diff, reads < reads_count);
+        swiDelay(5000000);
+    }
+
+    fclose(file);
+}
+
+static void test_readback(void) {
+    fat_init();
+    FILE *file = fopen(pad_filename, "r+b");
+    if (file == NULL) {
+        ui_select_top();
+        printf("\x1b[41mCould not open '%s'!\n", pad_filename);
+        return;
+    }
+#ifdef BLOCKSDS
+    if (lookup_cache_enabled)
+        fatInitLookupCacheFile(file, 65536);
+#endif
+    printf("        \x1b[46mTesting readback...\x1b[39m\n");
+
+    int reads_count = 1024;
+    for (int curr_size = 512; curr_size <= io_buffer_size/2; curr_size <<= 1) {
+        if (curr_size > 1*1024*1024) {
+            continue;
+        } else if (curr_size >= 1024*1024) {
+            printf("  %3d MiB", curr_size >> 20);
+        } else if (curr_size >= 1024) {
+            printf("  %3d KiB", curr_size >> 10);
+            reads_count >>= 1;
         } else {
-            sprintf(msg_buffer, "%.3f KB/s", kilobytes_per_second);
+            printf("  0.5 KiB");
         }
 
-        printf("\x1b[32D\x1b[%dC\x1b[42m%s\x1b[39m\n", 32 - 2 - strlen(msg_buffer), msg_buffer);
-        swiDelay(5000000);
+        uint32_t reads = 0;
+        while (reads < reads_count) {
+            randomize_buffer(io_buffer, curr_size);
+            uint32_t file_pos = ((my_rand() & (~0x1FF)) & 0x1FFFFF) + io_read_offset;
+            fseek(file, file_pos, SEEK_SET);
+            if (fwrite(io_buffer, curr_size, 1, file) <= 0)
+                break;
+            fseek(file, file_pos, SEEK_SET);
+            if (fread(io_buffer + curr_size, curr_size, 1, file) <= 0)
+                break;
+            if (memcmp(io_buffer, io_buffer + curr_size, curr_size))
+                break;
+            reads++;
+        }
+        printf("\x1b[32D\x1b[%dC\x1b[%s\x1b[39m\n", 32 - 2 - 5, reads < reads_count ? "41mERROR" : "42m   OK");
+        swiDelay(500000);
     }
 
     fclose(file);
@@ -299,15 +344,16 @@ int main(int argc, char **argv) {
             case 1: printf("\x1b[2J"); benchmark_write(false); press_start_to_continue(); break;
             case 2: printf("\x1b[2J"); benchmark_read(true); press_start_to_continue(); break;
             case 3: printf("\x1b[2J"); benchmark_write(true); press_start_to_continue(); break;
-            case 4: REG_EXMEMCNT ^= (1 << 15); break;
-            case 5:
+            case 4: printf("\x1b[2J"); test_readback(); press_start_to_continue(); break;
+            case 5: REG_EXMEMCNT ^= (1 << 15); break;
+            case 6:
                 if (io_read_offset == 0) io_read_offset = 1;
                 else if (io_read_offset >= 256) io_read_offset = 0;
                 else io_read_offset <<= 1;
                 break;
 #ifdef BLOCKSDS
-            case 6: lookup_cache_enabled = !lookup_cache_enabled; break;
-            case 7: if (!fat_initialized) dldiSetMode(dldiGetMode() == DLDI_MODE_ARM7 ? DLDI_MODE_ARM9 : DLDI_MODE_ARM7); break;
+            case 7: lookup_cache_enabled = !lookup_cache_enabled; break;
+            case 8: if (!fat_initialized) dldiSetMode(dldiGetMode() == DLDI_MODE_ARM7 ? DLDI_MODE_ARM9 : DLDI_MODE_ARM7); break;
 #endif
         }
 
@@ -315,14 +361,15 @@ int main(int argc, char **argv) {
         snprintf(options[1], 33, "Bench. random writes");
         snprintf(options[2], 33, "Bench. sequential reads");
         snprintf(options[3], 33, "Bench. sequential writes");
-        snprintf(options[4], 33, "RAM priority: %s", (REG_EXMEMCNT & (1 << 15)) ? "ARM7" : "ARM9");
-        snprintf(options[5], 33, "Byte offset: %d", io_read_offset);
+        snprintf(options[4], 33, "Test random writes");
+        snprintf(options[5], 33, "RAM priority: %s", (REG_EXMEMCNT & (1 << 15)) ? "ARM7" : "ARM9");
+        snprintf(options[6], 33, "Byte offset: %d", io_read_offset);
 #ifdef BLOCKSDS
-        snprintf(options[6], 33, "Seek lookup cache: %s", lookup_cache_enabled ? "Yes" : "No");
-        snprintf(options[7], 33, "DLDI CPU: %s", dldiGetMode() == DLDI_MODE_ARM7 ? "ARM7" : "ARM9");
-        options_count = 8;
+        snprintf(options[7], 33, "Seek lookup cache: %s", lookup_cache_enabled ? "Yes" : "No");
+        snprintf(options[8], 33, "DLDI CPU: %s", dldiGetMode() == DLDI_MODE_ARM7 ? "ARM7" : "ARM9");
+        options_count = 9;
 #else
-        options_count = 6;
+        options_count = 7;
 #endif
     } while (run_menu(options_count, &selection));
 
